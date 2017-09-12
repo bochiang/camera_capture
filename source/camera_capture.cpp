@@ -2,6 +2,7 @@
 #include <iostream>  
 #include <signal.h>
 #include <stdint.h>
+#include <time.h>
 
 using namespace std;
 using namespace cv;
@@ -59,44 +60,62 @@ void rgbaToYuv(int width, int height, unsigned char * rgb, unsigned char * yuv, 
     }
 }
 
-IplImage *camFrame = NULL;
-CvCapture *cam = NULL;
-
-//-------信号函数------------
-void process(int)
-{
-    cvReleaseCapture(&cam);//释放CvCapture结构
-    exit(0);
-}
-
 int main()
 {
+    int width = 320;               //设置图像分辨率
+    int height = 240;
+
     FILE *out = fopen("out_video.yuv", "wb");
-    int32_t YUV_buffersize = 640 * 480 * 1.5;
+    int32_t YUV_buffersize = width * height * 1.5;
     uint8_t *YUV_buffer = (uint8_t *)malloc(YUV_buffersize);
-    Mat rgbImg;
-    Mat yuvImg;
-    signal(SIGINT, process);//关闭信号（此处的SIGINT 为中断信号，即是键盘上的Ctrl + c）
-    namedWindow("视频窗口");
+    VideoCapture capture(0);
+    if (!capture.isOpened()) { //判断能够打开摄像头
+        cout << "can not open the camera" << endl;
+        cin.get();
+        exit(1);
+    }
+
+    capture.set(CV_CAP_PROP_FRAME_WIDTH, width);
+    capture.set(CV_CAP_PROP_FRAME_HEIGHT, height);
+
+    int count = 0;
+    clock_t tm_start;
+    clock_t tm_total;
+    tm_start = clock();
     while (1) {
-        //----------图片采样-------------
-        cam = cvCreateCameraCapture(0);//初始化从摄像头中获取视频
-        camFrame = cvQueryFrame(cam);//从摄像头或者文件中抓取并返回一帧
-        rgbImg = Mat(camFrame);//图片转换
+        clock_t tm_cur = clock();
+        Mat frame;
+        Mat yuvImg;
+        capture >> frame; //载入图像
 
-        waitKey(5);//时间等待
+        if (frame.empty()) { //判断图像是否载入
+            cout << "can not load the frame" << endl;
+        }
+        else {
+            count++;
+            if (count == 1) {
+                cout << frame.cols << "  " << frame.rows << endl;
+            }
 
-        /*采用opencv自带函数*/
-        //cvtColor(rgbImg, yuvImg, CV_BGR2YUV_I420);
-        //memcpy(YUV_buffer, yuvImg.data, YUV_buffersize * sizeof(unsigned char));//YUV_buffer即为所获取的YUV420数据  
+            /*采用opencv自带函数*/
+            //cvtColor(frame, yuvImg, CV_BGR2YUV_I420);
+            //memcpy(YUV_buffer, yuvImg.data, YUV_buffersize * sizeof(unsigned char));//YUV_buffer即为所获取的YUV420数据  
 
-        /*快速转换算法*/
-        rgbaToYuv(rgbImg.cols, rgbImg.rows, rgbImg.data, YUV_buffer, BGR_YUV420P);
+            /*快速转换算法*/
+            rgbaToYuv(width, height, frame.data, YUV_buffer, BGR_YUV420P);
 
-        fwrite(YUV_buffer, YUV_buffersize, 1, out);
-        imshow("视频窗口", rgbImg);  //显示图片
+            fwrite(YUV_buffer, YUV_buffersize, 1, out);
+            imshow("camera", frame);
+            char c = waitKey(62); //延时60毫秒
+            if (c == 27) //按ESC键退出
+                break;
+        }
+        tm_cur = clock() - tm_cur;
+        tm_total = clock() - tm_start;
+        printf("%6d: %6d/%8d ms, %8.3f/%8.3f fps\n", count,
+            tm_cur, tm_total,
+            1000.0 / (tm_cur + 0.001), 1000.0 * count / tm_total);
     }
     free(YUV_buffer);
     fclose(out);
-    return 0;
 }
